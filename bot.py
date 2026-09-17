@@ -8,26 +8,29 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения (для локального теста)
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 if not BOT_TOKEN:
-    raise ValueError("Токен BOT_TOKEN не найден! Добавьте его в переменные окружения.")
+    raise ValueError("Токен BOT_TOKEN не найден!")
 
 logging.basicConfig(level=logging.INFO)
 
-# --- 1. Инициализация Flask ---
+# --- Flask ---
 app = Flask(__name__)
 
-# Маршрут, который Render будет использовать для проверки, что бот жив
 @app.route("/")
 def home():
     return "Bot is running successfully!"
 
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    logging.info(f"Запуск веб-сервера на порту {port}...")
+    # use_reloader=False обязательно, иначе Flask попытается запуститься дважды
+    app.run(host="0.0.0.0", port=port, use_reloader=False)
 
-# --- 2. Логика бота (ваш код) ---
+# --- Бот ---
 dp = Dispatcher()
 
 @dp.message(CommandStart())
@@ -42,23 +45,18 @@ async def echo(message: Message):
 async def fallback(message: Message):
     await message.answer("Я понимаю только текст 🙃")
 
-
-# --- 3. Запуск бота в отдельном потоке ---
 async def start_bot():
     bot = Bot(token=BOT_TOKEN)
     logging.info("Бот запущен и начинает polling...")
     await dp.start_polling(bot)
 
-def run_bot_thread():
-    # Создаем новый event loop для этого потока
-    asyncio.run(start_bot())
-
 if __name__ == "__main__":
-    # Запускаем бота в фоновом потоке (daemon=True), чтобы он не блокировал Flask
-    bot_thread = threading.Thread(target=run_bot_thread, daemon=True)
-    bot_thread.start()
+    # Flask — в фоновом потоке (daemon=True, чтобы умер вместе с процессом)
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
 
-    # Получаем порт от Render (или используем 8080 локально) и запускаем Flask
-    port = int(os.environ.get("PORT", 8080))
-    logging.info(f"Запуск веб-сервера на порту {port}...")
-    app.run(host="0.0.0.0", port=port)
+    # Бот — в главном потоке
+    try:
+        asyncio.run(start_bot())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Бот остановлен.")
